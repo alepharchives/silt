@@ -11,6 +11,24 @@
 #include <sstream>
 #include <time.h>
 
+#ifdef __APPLE__
+#include <mach/mach_time.h>
+#define CLOCK_MONOTONIC_RAW 1
+
+static void clock_gettime(int flags, struct timespec *ts)
+{
+    static mach_timebase_info_data_t s_timebase_info;
+
+    if (s_timebase_info.denom == 0)
+        (void) mach_timebase_info(&s_timebase_info);
+
+    ts->tv_sec = 0;  /* time_t   tv_sec;  seconds */
+    /* mach_absolute_time() returns billionth of seconds, so divide by one
+       million to get milliseconds */
+    ts->tv_nsec = (long)((mach_absolute_time() * s_timebase_info.numer) / ((1000 * 1000) * s_timebase_info.denom));  /* long     tv_nsec; nanoseconds */
+}
+#endif
+
 namespace fawn {
 
     FawnDS_Combi::FawnDS_Combi()
@@ -274,9 +292,9 @@ namespace fawn {
         return UNSUPPORTED;
     }
 
-	FawnDS_Return
-	FawnDS_Combi::Status(const FawnDS_StatusType& type, Value& status) const
-	{
+        FawnDS_Return
+        FawnDS_Combi::Status(const FawnDS_StatusType& type, Value& status) const
+        {
         if (!open_)
             return ERROR;
 
@@ -308,7 +326,7 @@ namespace fawn {
                 oss << ']';
             }
             break;
-		case CAPACITY:
+                case CAPACITY:
             oss << -1;      // unlimited
             break;
         default:
@@ -745,7 +763,7 @@ namespace fawn {
             }
         }
 
-        // merge the sorted middle stores into the back store 
+        // merge the sorted middle stores into the back store
         FawnDS* new_back_store;
         {
             new_back_store = merge(back_store, sorter, num_adds, num_dels);

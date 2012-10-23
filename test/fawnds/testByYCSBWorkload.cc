@@ -13,11 +13,29 @@
 
 #include "preprocessTrace.h"
 
+#ifdef __APPLE__
+#include <mach/mach_time.h>
+#define CLOCK_MONOTONIC_RAW 1
+
+static void clock_gettime(int flags, struct timespec *ts)
+{
+    static mach_timebase_info_data_t s_timebase_info;
+
+    if (s_timebase_info.denom == 0)
+        (void) mach_timebase_info(&s_timebase_info);
+
+    ts->tv_sec = 0;  /* time_t   tv_sec;  seconds */
+    /* mach_absolute_time() returns billionth of seconds, so divide by one
+       million to get milliseconds */
+    ts->tv_nsec = (long)((mach_absolute_time() * s_timebase_info.numer) / ((1000 * 1000) * s_timebase_info.denom));  /* long     tv_nsec; nanoseconds */
+}
+#endif
+
 using namespace std;
 using namespace tbb;
 using namespace fawn;
 
-#define MAX_QUERIES 1048576 
+#define MAX_QUERIES 1048576
 
 int32_t num_threads = 1;
 int64_t max_ops_per_sec = 1000000000L;
@@ -44,9 +62,9 @@ DataStat *latency_get;
 
 void *query_reader(void *p) {
     FILE *fp = (FILE *) p;
-    size_t n; 
-                
-    printf("starting thread: query_reader!\n");                
+    size_t n;
+
+    printf("starting thread: query_reader!\n");
 
     if (fread(&val_len, sizeof(size_t), 1, fp))
         cout << "val_len=" << val_len << "bytes" <<  endl;
@@ -56,9 +74,9 @@ void *query_reader(void *p) {
     while(!feof((FILE*) fp)) {
         if (num_query_read < num_query_sent + MAX_QUERIES/2) {
             n = fread(&(q_buf[num_query_read % MAX_QUERIES]), sizeof(Query), 1024,  fp);
-             
+
             num_query_read = num_query_read + n;
-            
+
             //printf("[query_reader] num_query_read=%ld\n", num_query_read);
         } else {
             //cout << "query_reader is sleeping! num_query_read=" << num_query_read << " num_query_sent=" << num_query_sent << endl;
@@ -70,7 +88,7 @@ void *query_reader(void *p) {
     }
     done = true;
     fclose(fp);
-    printf("killing thread: query_reader!\n");                
+    printf("killing thread: query_reader!\n");
     pthread_exit(NULL);
 }
 
@@ -104,10 +122,10 @@ void *query_sender(void * id) {
 
                 clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
                 last_time_ = static_cast<int64_t>(ts.tv_sec) * 1000000000Lu + static_cast<int64_t>(ts.tv_nsec);
-                ret = h->Put(ConstRefValue(q.hashed_key, 20), 
-                             ConstRefValue(val, val_len));         
+                ret = h->Put(ConstRefValue(q.hashed_key, 20),
+                             ConstRefValue(val, val_len));
                 if (ret != OK) {
-                    printf("error! h->Put() return value=%d, expected=%d, operation%llu\n", 
+                    printf("error! h->Put() return value=%d, expected=%d, operation%llu\n",
                            ret, OK, static_cast<unsigned long long>(cur));
                     //exit(1);
                 }
@@ -134,16 +152,16 @@ void *query_sender(void * id) {
 
                 SizedValue<MAXLEN> read_data;
                 clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-                last_time_ = static_cast<int64_t>(ts.tv_sec) * 1000000000Lu + static_cast<int64_t>(ts.tv_nsec);                
+                last_time_ = static_cast<int64_t>(ts.tv_sec) * 1000000000Lu + static_cast<int64_t>(ts.tv_nsec);
                 ret = h->Get(ConstRefValue(q.hashed_key, 20), read_data);
                 if (ret != expected_ret) {
-                    printf("error! h->Get() return value=%d, expected=%d, operation%llu\n", 
+                    printf("error! h->Get() return value=%d, expected=%d, operation%llu\n",
                            ret, expected_ret, static_cast<unsigned long long>(cur));
                     //exit(1);
                 }
 
                 clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-                current_time_ = static_cast<int64_t>(ts.tv_sec) * 1000000000Lu + static_cast<int64_t>(ts.tv_nsec);                
+                current_time_ = static_cast<int64_t>(ts.tv_sec) * 1000000000Lu + static_cast<int64_t>(ts.tv_nsec);
                 latency = current_time_ - last_time_;
 
                 pthread_mutex_lock(&stat_lock);
@@ -203,15 +221,15 @@ void replay(string recfile) {
         pthread_create(&sender_threads[t], NULL, query_sender, (void *) t);
     }
 
-    // wait for threads 
+    // wait for threads
     pthread_join(reader_thread, NULL);
     for (int t = 0; t < num_threads; t++) {
         pthread_join(sender_threads[t], NULL);
     }
 
     // output and destroy everything
-    printf("total %llu ops in %f sec: tput = %.2f KQPS\n", 
-           static_cast<unsigned long long> (latency_put->num() + latency_get->num()), 
+    printf("total %llu ops in %f sec: tput = %.2f KQPS\n",
+           static_cast<unsigned long long> (latency_put->num() + latency_get->num()),
            0.000000001 * (latency_put->sum() + latency_get->sum()),
            1000000. * (latency_put->num() + latency_get->num()) / (latency_put->sum() + latency_get->sum())        );
 
@@ -239,7 +257,7 @@ void replay(string recfile) {
 
 
 void usage() {
-    cout << "usage: testByYCSBWorkload conf_file load_workload_name trans_workload_name [-t num_threads] [-r max_ops_per_sec] [-c convert_rate] [-m merge_rate] [-s successful_get_ratio]" << endl 
+    cout << "usage: testByYCSBWorkload conf_file load_workload_name trans_workload_name [-t num_threads] [-r max_ops_per_sec] [-c convert_rate] [-m merge_rate] [-s successful_get_ratio]" << endl
          << "e.g. ./testByYCSBWorkload testConfigs/bdb.xml testWorkloads/update_only" << endl;
 
 }
@@ -300,7 +318,7 @@ int main(int argc, char **argv) {
 
     delete rate_limiter;
 
-    rate_limiter = new RateLimiter(0, max_ops_per_sec, 1, 1000000000L / max_ops_per_sec);    
+    rate_limiter = new RateLimiter(0, max_ops_per_sec, 1, 1000000000L / max_ops_per_sec);
     GlobalLimits::instance().enable();
 
     cout << "process transaction ... " << endl;
